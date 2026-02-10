@@ -1,0 +1,12 @@
+requests 
+python-dotenv 
+langchain-openai 
+langchain>0.3,<1.0
+langchain-community 
+beautifulsoup4 
+feedparser 
+langchain-yt-dlp 
+newspaper3k 
+listparser
+lxml-html-clean 
+tqdm
