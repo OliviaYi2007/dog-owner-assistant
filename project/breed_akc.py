@@ -1,17 +1,3 @@
-"""
-AKC Breed Data Module
-
-This module handles:
-1. Scraping ALL AKC breed pages (pages 1-25) with pagination
-2. Strict URL validation to exclude categories, groups, and filters
-3. Tight HTML selectors to avoid grabbing nav/sidebar/footer links
-4. Caching breed list mapping (normalized_name -> {display_name, akc_url})
-5. Fetching breed-specific content on demand
-6. Caching breed content locally to avoid re-scraping
-
-All caching is done locally in JSON files to avoid aggressive scraping.
-"""
-
 import json
 import os
 import re
@@ -29,7 +15,7 @@ BREED_CONTENT_CACHE_DIR = "breed_content_cache"
 AKC_BREED_INDEX_BASE = "https://www.akc.org/dog-breeds/"
 AKC_BASE_URL = "https://www.akc.org"
 
-# User-Agent header (realistic browser)
+
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Slugs to explicitly exclude (known categories, groups, collections)
@@ -86,7 +72,6 @@ def _is_valid_breed_url(href: str) -> bool:
     if not re.match(r'^[a-z0-9\-]+$', slug):
         return False
     
-    # Must be at least 3 chars long
     if len(slug) < 3:
         return False
     
@@ -157,10 +142,6 @@ def _scrape_all_breed_pages() -> Dict[str, Dict[str, str]]:
         pages_crawled += 1
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Tight selector strategy:
-        # Look for the main breed list container (avoid nav, header, footer, sidebar)
-        # Typically breeds are in <main> or a div with class containing 'breed' or 'card'
-        # We'll search within the main content area only
         
         breed_links = []
         
@@ -168,9 +149,6 @@ def _scrape_all_breed_pages() -> Dict[str, Dict[str, str]]:
         main = soup.find('main')
         search_scope = main if main else soup
         
-        # Within main/body, find breed card links
-        # AKC usually uses divs with breed/card classes containing <a> tags
-        # We'll search for anchors within likely breed containers
         potential_containers = search_scope.find_all(
             ['div', 'li', 'article'],
             class_=re.compile(r'(breed|card|item|post)', re.I)
@@ -217,16 +195,12 @@ def _scrape_all_breed_pages() -> Dict[str, Dict[str, str]]:
             
             if normalized:
                 links_passed_validation += 1
-                # If we've seen this normalized name before, keep the "best" display_name
-                # (shortest/cleanest one typically)
                 if normalized not in breed_map:
                     breed_map[normalized] = {
                         "display_name": display_name,
                         "akc_url": full_url
                     }
                 else:
-                    # Keep the version with shorter display_name (cleaner)
-                    existing = breed_map[normalized]
                     if len(display_name) < len(existing['display_name']):
                         breed_map[normalized] = {
                             "display_name": display_name,
@@ -236,15 +210,6 @@ def _scrape_all_breed_pages() -> Dict[str, Dict[str, str]]:
         # Be respectful to the server
         if page_num < 25:
             time.sleep(0.3)
-    
-    # Print summary
-    print(f"\n{'='*60}")
-    print(f"✅ SCRAPE SUMMARY:")
-    print(f"  Pages crawled: {pages_crawled}")
-    print(f"  Total links found: {total_links_found}")
-    print(f"  Links passed validation: {links_passed_validation}")
-    print(f"  Unique breeds (deduplicated): {len(breed_map)}")
-    print(f"{'='*60}")
     
     if breed_map:
         # Show sample of 10 breeds
