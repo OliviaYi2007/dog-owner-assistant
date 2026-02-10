@@ -284,15 +284,18 @@ def get_breed_list() -> Dict[str, Dict[str, str]]:
     return breed_mapping
 
 
-def get_breed_content(breed_name: str) -> Optional[str]:
+def get_breed_full_profile(breed_name: str) -> Optional[Dict]:
     """
-    Get the main content text from an AKC breed page.
+    Get comprehensive breed-specific information from an AKC breed page.
+    Extracts ONLY breed-related content: traits, lifespan, weight, personality, temperament, etc.
+    Excludes: navigation, links, images metadata, page structure.
     
     Args:
         breed_name: Normalized breed name (key from breed list)
     
     Returns:
-        Cleaned text content from the breed page, or None if not found
+        Dict with: breed_name, url, title, content (breed info only), key_traits
+        Returns None if breed not found or fetch fails.
     """
     # Get breed list to find URL
     breed_list = get_breed_list()
@@ -304,68 +307,133 @@ def get_breed_content(breed_name: str) -> Optional[str]:
     
     # Check content cache
     os.makedirs(BREED_CONTENT_CACHE_DIR, exist_ok=True)
-    cache_file = os.path.join(BREED_CONTENT_CACHE_DIR, f"{breed_name}.json")
+    cache_file = os.path.join(BREED_CONTENT_CACHE_DIR, f"{breed_name}_profile.json")
     
     if os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cached = json.load(f)
-                print(f"✅ Loaded {breed_info['display_name']} content from cache")
-                return cached.get("content")
+                print(f"✅ Loaded breed profile for {breed_info['display_name']} from cache")
+                return cached
         except Exception as e:
             print(f"⚠️ Error reading content cache: {e}. Will re-fetch.")
     
-    # Fetch breed page content
+    # Fetch breed page
     headers = {'User-Agent': USER_AGENT}
-    print(f"📥 Fetching content for {breed_info['display_name']} from {breed_url}...")
+    print(f"📥 Fetching breed info for {breed_info['display_name']} from {breed_url}...")
     
     try:
         response = requests.get(breed_url, timeout=30, headers=headers)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Remove script and style elements
-        for script in soup(["script", "style", "nav", "header", "footer"]):
-            script.decompose()
+        # Extract title (H1)
+        h1 = soup.find('h1')
+        page_title = h1.get_text(strip=True) if h1 else breed_info["display_name"]
         
-        # Extract main content - look for common content containers
-        content_parts = []
+        # Remove non-content elements (nav, footer, ads, scripts, etc.)
+        for selector in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript']):
+            selector.decompose()
         
-        # Try to find main content area
-        main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=re.compile(r'content|main|article', re.I))
+        # Find the breed name from the breed info
+        breed_display_name = breed_info['display_name']
         
-        if main_content:
-            # Get all text from main content
-            text = main_content.get_text(separator=' ', strip=True)
-            content_parts.append(text)
-        else:
-            # Fallback: get body text
-            body = soup.find('body')
-            if body:
-                text = body.get_text(separator=' ', strip=True)
-                content_parts.append(text)
+        # Strategy: Find divs that contain the breed name + description
+        # These typically contain the breed description text
+        body = soup.find('body')
+        full_content = ""
         
-        # Clean up the text
-        full_content = ' '.join(content_parts)
-        # Remove excessive whitespace
+        if body:
+            # Find all divs with substantial text that includes the breed name
+            for div in body.find_all('div', recursive=True):
+                text = div.get_text(strip=True)
+                
+                # Check if this div contains the breed name
+                if breed_display_name.lower() in text.lower() and len(text) > 150 and len(text) < 1000:
+                    # Check if it contains breed-related keywords (not AKC mission statement)
+                    lower_text = text.lower()
+                    
+                    # Skip AKC mission/about text (1000+ chars with "founded in 1884")
+                    if 'founded in 1884' in lower_text:
+                        continue
+                    
+                    # Skip navigation text
+                    if any(skip in lower_text for skip in ['sign in', 'menu', 'home', 'dog breeds', 'search']):
+                        # But only skip if it's MOSTLY nav text
+                        nav_count = sum(1 for skip in ['sign in', 'menu', 'home', 'dog breeds', 'search'] if skip in lower_text)
+                        if nav_count > 2:
+                            continue
+                    
+                    # This looks like the breed description
+                    full_content = text
+                    break
+        
+        # Clean up and normalize whitespace
         full_content = re.sub(r'\s+', ' ', full_content).strip()
         
-        # Cache the content
-        cache_data = {
+        # Extract key traits/attributes (look for common patterns)
+        traits = {}
+        
+        # Look for specific dog trait patterns in the content
+        trait_keywords = {
+            'life span': r'life\s*span[:\s]+([^\.]+)',
+            'weight': r'weight[:\s]+([^\.]+)',
+            'height': r'height[:\s]+([^\.]+)',
+            'size': r'size[:\s]+([^\.]+)',
+            'temperament': r'temperament[:\s]+([^\.]+)',
+            'personality': r'personality[:\s]+([^\.]+)',
+            'energy level': r'energy\s*level[:\s]+([^\.]+)',
+            'grooming': r'grooming[:\s]+([^\.]+)',
+            'hypoallergenic': r'hypoallergenic[:\s]+([^\.]+)',
+            'shedding': r'shedding[:\s]+([^\.]+)',
+        }
+        
+        lower_content = full_content.lower()
+        for trait_name, pattern in trait_keywords.items():
+            match = re.search(pattern, lower_content, re.IGNORECASE)
+            if match:
+                traits[trait_name] = match.group(1).strip()
+        
+        # Build breed profile (focused on breed info only)
+        profile = {
             "breed_name": breed_info["display_name"],
             "url": breed_url,
-            "content": full_content
+            "title": page_title,
+            "content": full_content,  # Full breed description and info
+            "key_traits": traits,      # Extracted dog traits
+            "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
         }
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=2, ensure_ascii=False)
         
-        print(f"💾 Cached content for {breed_info['display_name']}")
+        # Cache the profile
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(profile, f, indent=2, ensure_ascii=False)
+            print(f"💾 Cached breed profile for {breed_info['display_name']}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not cache profile: {e}")
         
-        return full_content
+        return profile
         
     except Exception as e:
-        print(f"❌ Error fetching breed content: {e}")
+        print(f"❌ Error fetching breed profile: {e}")
         return None
+
+
+def get_breed_content(breed_name: str) -> Optional[str]:
+    """
+    Get the main content text from an AKC breed page.
+    Returns only the focused breed content (traits, personality, lifespan, weight, etc.).
+    
+    Args:
+        breed_name: Normalized breed name (key from breed list)
+    
+    Returns:
+        Cleaned breed information text, or None if not found
+    """
+    profile = get_breed_full_profile(breed_name)
+    if profile:
+        return profile.get("content")
+    return None
 
 
 def get_breed_display_names() -> list:

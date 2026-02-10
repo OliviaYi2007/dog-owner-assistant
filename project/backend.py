@@ -54,6 +54,15 @@ def get_chatbot_response(user_question: str, selected_breed: str = None) -> str:
     Returns:
         The chatbot's response
     """
+    if selected_breed:
+        breed_content = get_breed_content(selected_breed)
+
+        print("\n==============================")
+        print(f"BREED: {selected_breed}")
+        print("RAW SCRAPED CONTENT (first 200000 chars):")
+        print(breed_content[:2000000] if breed_content else "❌ No content")
+        print("==============================\n")
+
     # If a breed is selected, fetch breed-specific context
     breed_context = ""
     breed_name_display = None
@@ -65,13 +74,10 @@ def get_chatbot_response(user_question: str, selected_breed: str = None) -> str:
             breed_content = get_breed_content(selected_breed)
             
             if breed_content:
-                # Prepend breed-specific context to the question
-                # Limit to first 3000 chars to avoid token limits
-                breed_content_limited = breed_content[:3000]
+                breed_content_limited = breed_content[:12000]
                 breed_context = f"""IMPORTANT: The user is asking about a {breed_name_display}. 
 Below is the official AKC (American Kennel Club) information about this breed. 
 Please prioritize this breed-specific information when answering the question.
-Only use information that is present in the AKC content below. Do not hallucinate breed traits.
 
 AKC Breed Information for {breed_name_display}:
 {breed_content_limited}
@@ -97,3 +103,5 @@ Now answer the user's question with this breed-specific context in mind:
     # Get response from the chain
     result = qa_chain({"question": enhanced_question})
     return result["answer"]
+
+    

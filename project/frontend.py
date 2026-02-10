@@ -39,7 +39,7 @@ delays = [0, 1.5, 0.7, 2.2, 0.3, 1.0, 3.1, 0.4, 2.5, 1.1, 0.9, 0.6]
 sizes = [28, 34, 30, 36, 32, 26, 38, 30, 33, 29, 31, 35]
 for i in range(len(positions)):
     dogs_html += (
-        f"<div class='dog' style=\"left:{positions[i]}%; font-size:{sizes[i]}px; animation: dogfall {durations[i]}s linear {delays[i]}s infinite;\">🦴</div>"
+        f"<div class='dog' style=\"left:{positions[i]}%; font-size:{sizes[i]}px; animation: dogfall {durations[i]}s linear {delays[i]}s infinite;\">🐶</div>"
     )
 
 if dogs_html:
