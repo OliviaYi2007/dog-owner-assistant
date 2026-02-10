@@ -4,6 +4,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 import os
 from dotenv import load_dotenv
+from breed_akc import get_breed_content, get_breed_list
 
 # Load environment variables
 load_dotenv()
@@ -41,9 +42,58 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     return_source_documents=True
 )
 
-def get_chatbot_response(user_question: str) -> str:
+def get_chatbot_response(user_question: str, selected_breed: str = None) -> str:
     """
     Get a response from the chatbot based on the user's question.
+    
+    Args:
+        user_question: The user's question
+        selected_breed: Optional normalized breed name. If provided, breed-specific
+                       context from AKC will be prepended to the question.
+    
+    Returns:
+        The chatbot's response
     """
-    result = qa_chain({"question": user_question})
+    # If a breed is selected, fetch breed-specific context
+    breed_context = ""
+    breed_name_display = None
+    
+    if selected_breed:
+        breed_list = get_breed_list()
+        if selected_breed in breed_list:
+            breed_name_display = breed_list[selected_breed]["display_name"]
+            breed_content = get_breed_content(selected_breed)
+            
+            if breed_content:
+                # Prepend breed-specific context to the question
+                # Limit to first 3000 chars to avoid token limits
+                breed_content_limited = breed_content[:3000]
+                breed_context = f"""IMPORTANT: The user is asking about a {breed_name_display}. 
+Below is the official AKC (American Kennel Club) information about this breed. 
+Please prioritize this breed-specific information when answering the question.
+Only use information that is present in the AKC content below. Do not hallucinate breed traits.
+
+AKC Breed Information for {breed_name_display}:
+{breed_content_limited}
+
+---
+
+Now answer the user's question with this breed-specific context in mind:
+"""
+    
+    # Construct the enhanced question
+    if breed_context:
+        enhanced_question = breed_context + user_question
+    else:
+        enhanced_question = user_question
+    
+    # If question is breed-specific but no breed selected, ask for clarification
+    breed_keywords = ["breed", "this dog", "my dog", "puppy", "pup"]
+    is_breed_specific = any(keyword in user_question.lower() for keyword in breed_keywords)
+    
+    if is_breed_specific and not selected_breed:
+        return "I'd be happy to help with breed-specific questions! Please select a dog breed from the sidebar to get more accurate, AKC-based answers tailored to that specific breed."
+    
+    # Get response from the chain
+    result = qa_chain({"question": enhanced_question})
     return result["answer"]

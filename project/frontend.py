@@ -1,7 +1,7 @@
 import streamlit as st
 from backend import get_chatbot_response
+from breed_akc import get_breed_display_names, get_normalized_name_from_display
 
-# Add a light beige page background while preserving all existing elements
 st.markdown(
         """
         <style>
@@ -45,6 +45,36 @@ for i in range(len(positions)):
 if dogs_html:
     st.markdown(f"<div id='dogs'>{dogs_html}</div>", unsafe_allow_html=True)
 
+# Breed selector in sidebar
+st.sidebar.title("🐕 Breed Selector")
+st.sidebar.markdown("Select a dog breed for more accurate, AKC-based answers")
+
+# Get breed list
+try:
+    breed_names = get_breed_display_names()
+    breed_options = ["None / Auto-detect"] + breed_names
+except Exception as e:
+    st.sidebar.error(f"Error loading breeds: {e}")
+    breed_options = ["None / Auto-detect"]
+    breed_names = []
+
+# Breed dropdown
+selected_breed_display = st.sidebar.selectbox(
+    "Choose a breed:",
+    breed_options,
+    key="breed_selector"
+)
+
+# Convert display name to normalized name if a breed is selected
+selected_breed = None
+if selected_breed_display and selected_breed_display != "None / Auto-detect":
+    selected_breed = get_normalized_name_from_display(selected_breed_display)
+    if selected_breed:
+        st.sidebar.success(f"Selected: {selected_breed_display}")
+    else:
+        st.sidebar.warning("Could not find breed mapping")
+        selected_breed = None
+
 # 🎨 TODO: Customize your chatbot's appearance!
 st.title("Dog Owner Assistant    🐶")
 st.markdown("Ask me anything about caring for a dog")
@@ -65,9 +95,9 @@ if prompt := st.chat_input("What would you like to know?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Get bot response
+    # Get bot response (pass selected breed if any)
     with st.chat_message("assistant"):
-        response = get_chatbot_response(prompt)
+        response = get_chatbot_response(prompt, selected_breed=selected_breed)
         st.markdown(response)
 
     # Add assistant response to chat history
